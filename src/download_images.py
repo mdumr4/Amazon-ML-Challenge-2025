@@ -3,9 +3,9 @@ import os
 from utils import download_images
 
 # Define file paths
-TRAIN_CSV_PATH = "C:/Users/conqu/Desktop/AML/dataset/train_cleaned.csv"
-TEST_CSV_PATH = "C:/Users/conqu/Desktop/AML/dataset/test_cleaned.csv"
-IMAGE_DIR = "C:/Users/conqu/Desktop/AML/dataset/images"
+TRAIN_CSV_PATH = "dataset/train_cleaned.csv"
+TEST_CSV_PATH = "dataset/test_cleaned.csv"
+IMAGE_DIR = "dataset/images"
 
 def main():
     print("Starting image download process...")

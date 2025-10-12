@@ -30,9 +30,9 @@ class SmoothSMAPELoss(nn.Module):
 
 # --- Configuration ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-TRAIN_CSV_PATH = "C:/Users/conqu/Desktop/AML/dataset/train_cleaned.csv"
-IMAGE_DIR = "C:/Users/conqu/Desktop/AML/dataset/images"
-MODEL_SAVE_PATH = "C:/Users/conqu/Desktop/AML/cross_modal_model.pth"
+TRAIN_CSV_PATH = "dataset/train_cleaned.csv"
+IMAGE_DIR = "dataset/images"
+MODEL_SAVE_PATH = "cross_modal_model.pth"
 EPOCHS = 10
 BATCH_SIZE = 16 # Adjust based on your GPU memory
 LEARNING_RATE = 5e-6 # Low learning rate for fine-tuning
@@ -107,8 +107,8 @@ def main():
     # Share the vocabulary with the validation dataset
     val_dataset = ProductDataset(dataframe=val_df, tokenizer=tokenizer, image_processor=image_processor, image_dir=IMAGE_DIR, unit_vocab=unit_vocab)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
+    train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, pin_memory=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=2, pin_memory=True)
     print("Datasets created successfully.")
 
     # --- 4. Initialize Model, Loss, and Optimizer ---
