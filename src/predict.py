@@ -7,17 +7,19 @@ from transformers import BertTokenizer, ViTImageProcessor
 from tqdm import tqdm
 import os
 import torch.backends.cudnn as cudnn
+from collections import OrderedDict
 
 # Import model and dataset classes
 from model import ProductDataset, CrossModalAttentionModel
 
 # --- Configuration ---
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-TEST_CSV_PATH = "dataset/test_cleaned.csv"
-IMAGE_DIR = "dataset/images"
-MODEL_PATH = "cross_modal_model.pth"
-VOCAB_PATH = "unit_vocab.json"
-OUTPUT_CSV_PATH = "test_out.csv"
+BASE_PATH = "/content/drive/MyDrive/Colab Notebooks/"
+TEST_CSV_PATH = os.path.join(BASE_PATH, "dataset/test_cleaned.csv")
+IMAGE_DIR = os.path.join(BASE_PATH, "dataset/images")
+MODEL_PATH = os.path.join(BASE_PATH, "best.pth") # Use the best saved model
+VOCAB_PATH = os.path.join(BASE_PATH, "unit_vocab.json")
+OUTPUT_CSV_PATH = os.path.join(BASE_PATH, "test_out.csv")
 BATCH_SIZE = 256 # Can use a larger batch size for inference
 
 def main():
@@ -37,16 +39,16 @@ def main():
     image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
 
     # --- 2. Load Model ---
-    print("Loading trained model...")
+    print(f"Loading trained model from {MODEL_PATH}...")
     model = CrossModalAttentionModel(unit_vocab_size=unit_vocab_size).to(DEVICE)
     
-    # Compile the model before loading weights for max performance
-    print("Compiling model...")
-    model = torch.compile(model)
-
-    # Load the state dict from the saved file (it will have _orig_mod prefixes)
+    # Clean the state_dict if the model was saved after torch.compile()
     state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
-    model.load_state_dict(state_dict)
+    new_state_dict = OrderedDict()
+    for k, v in state_dict.items():
+        name = k.replace("_orig_mod.", "") # remove `_orig_mod.`
+        new_state_dict[name] = v
+    model.load_state_dict(new_state_dict)
     model.eval() # Set model to evaluation mode
 
     # --- 3. Create Test Dataset and DataLoader ---
@@ -75,7 +77,7 @@ def main():
             unit_idx = batch['unit_idx'].to(DEVICE, non_blocking=True)
 
             # Use autocast for mixed precision inference
-            with torch.autocast(device_type=str(device)):
+            with torch.autocast(device_type=str(DEVICE)):
                 log_preds = model(input_ids, attention_mask, pixel_values, value, unit_idx)
             
             # Inverse transform and safeguard

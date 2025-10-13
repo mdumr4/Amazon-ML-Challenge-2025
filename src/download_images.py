@@ -3,9 +3,10 @@ import os
 from utils import download_images
 
 # Define file paths
-TRAIN_CSV_PATH = "dataset/train_cleaned.csv"
-TEST_CSV_PATH = "dataset/test_cleaned.csv"
-IMAGE_DIR = "dataset/images"
+BASE_PATH = "/content/drive/MyDrive/Colab Notebooks/"
+TRAIN_CSV_PATH = os.path.join(BASE_PATH, "dataset/train_cleaned.csv")
+TEST_CSV_PATH = os.path.join(BASE_PATH, "dataset/test_cleaned.csv")
+IMAGE_DIR = os.path.join(BASE_PATH, "dataset/images")
 
 def main():
     print("Starting image download process...")
