@@ -1,85 +1,75 @@
-# ML Challenge 2025: Smart Product Pricing Solution
+# ML Challenge 2025: Final Solution - A Two-Model Ensemble
 
-**Team Name:** [Your Team Name]  
-**Team Members:** [List all team members]  
-**Submission Date:** [Date]
+**Team Name:** AML
+**Team Members:** Mohammed Umar F, Soujanya K Hegde, Soha Rida Khan, Akshay Shanbhag
+**Submission Date:** 13 October 2025
 
 ---
 
 ## 1. Executive Summary
-Our solution leverages a state-of-the-art, tri-modal deep learning model to predict product prices by analyzing textual descriptions, product images, and structured tabular features. The architecture uses a cross-attention mechanism to fuse text and image data, and then intelligently fuses this with tabular features using a **Gated Multimodal Unit (GMU)**. To align with the competition's goals, we train the model on a **log-transformed** price target using a custom, differentiable **SMAPE loss function**, ensuring a robust and highly-optimized solution.
+Our final solution is a powerful **two-model ensemble** that leverages the unique strengths of different model architectures to achieve a highly accurate and robust price prediction. The ensemble combines a state-of-the-art, tri-modal deep learning network with a fast and efficient LightGBM model. The final prediction is an average of the outputs from these two "expert" models, a technique proven to reduce error and improve generalization.
 
 ---
 
 ## 2. Methodology Overview
 
-### 2.1 Problem Analysis
-Initial analysis revealed two key challenges: 1) The data is multi-modal (text, image, tabular), requiring a sophisticated fusion strategy. 2) The target variable, `price`, is extremely right-skewed, which can destabilize training. Our methodology directly addresses both of these challenges.
+### 2.1 Solution Strategy
+Our strategy is based on the principle that different types of models learn different patterns in the data. By combining their "opinions," we can achieve a result that is superior to any single model.
 
-### 2.2 Solution Strategy
-Our approach is a single, end-to-end, tri-modal neural network that learns from all data sources simultaneously.
+- **Model 1: The "Fusion Powerhouse"**: A deep neural network designed to understand the complex, unstructured data (text and images) and the interactions between all modalities.
+- **Model 2: The "Metadata Expert"**: A LightGBM model, which is a type of gradient boosting machine that excels at finding patterns in structured, tabular data.
+- **Ensembling**: The final prediction is a simple average of the outputs from these two models, providing a balanced and more accurate result.
 
-**Core Innovations:**
-1.  **Gated Multimodal Unit (GMU):** Instead of simple concatenation, we use a GMU to dynamically learn the importance of text/image features vs. tabular features for each product, allowing for a more intelligent, context-aware fusion.
-2.  **Log-Transformed Target:** We train the model to predict `log(price + 1)` to mitigate the extreme skew of the price distribution and stabilize training.
-3.  **Custom SMAPE Loss:** We use a custom `SmoothSMAPELoss` function, a differentiable surrogate for the official competition metric, to ensure our model is directly optimizing for the evaluation criteria.
+### 2.2 Core Innovations
 
----
-
-## 3. Model Architecture
-
-### 3.1 Architecture Overview
-Our model is composed of three parallel encoders, a two-stage fusion process, and a final regression head:
-1.  **Encoders:** A BERT model for text, a ViT for images, and an MLP for tabular data (`value` and `unit`).
-2.  **Fusion Stage 1 (Cross-Attention):** Text and image embeddings are fused using a cross-attention mechanism.
-3.  **Fusion Stage 2 (GMU):** The fused text/image features are then fused with the tabular features using a Gated Multimodal Unit.
-4.  **Regression Head:** The final fused vector is passed to an MLP to predict the log-transformed price.
-
-### 3.2 Model Components
-
-**Text Processing Pipeline:**
-- **Preprocessing:** Text from `item_name` and `description` is concatenated and tokenized via `BertTokenizer`.
-- **Model Type:** `bert-base-uncased` (fine-tuned).
-
-**Image Processing Pipeline:**
-- **Preprocessing:** Images are resized and normalized via `ViTImageProcessor`.
-- **Model Type:** `google/vit-base-patch16-224-in21k` (fine-tuned).
-
-**Tabular Processing Pipeline:**
-- **Preprocessing:** `value` is normalized; `unit` is converted to an index for an embedding layer.
-- **Model Type:** An MLP with an `nn.Embedding` layer for the `unit` feature.
-
-**Fusion and Prediction:**
-- **Fusion:** A `GatedMultimodalUnit` (GMU) dynamically combines the projected text/image features with the tabular features.
-- **Regression Head:** An MLP that maps the final 128-dimension fused vector to a single log-price value.
+1.  **Hybrid Architecture:** Combining a deep learning model with a gradient boosting model captures a wider variety of signals in the data.
+2.  **Advanced Preprocessing:** We employ a detailed preprocessing pipeline including text cleaning, image augmentation (for the neural network), Z-score normalization, and entity embeddings for categorical features.
+3.  **Log-Transformed Target & Custom Loss:** We train on the log-transformed price and use a custom `SmoothSMAPELoss` to directly optimize for the competition's evaluation metric.
 
 ---
 
-## 4. Training Strategy
+## 3. Model Architectures
 
-- **Target Variable:** The model is trained to predict the log-transformed price: `log(price + 1)`.
-- **Loss Function:** `SmoothSMAPELoss`, a custom differentiable approximation of the official SMAPE evaluation metric.
-- **Optimizer:** `AdamW` with a learning rate of `5e-6`.
-- **Data Split & Epochs:** The data is split 80/20 for training/validation and trained for 10 epochs.
+### 3.1 Model 1: The Fusion Powerhouse (Tri-Modal NN)
 
----
+This is a complex neural network with three parallel encoders whose outputs are intelligently fused.
 
-## 5. Model Performance
+- **Text Encoder:** A `bert-base-uncased` model processes the cleaned `item_name`.
+- **Image Encoder:** A `facebook/dinov2-base` Vision Transformer processes the product images. Training images are augmented with random flips, rotations, and color jitter.
+- **Tabular Encoder:** An MLP processes the Z-score normalized `pack_size` and `quantity_value`, along with an embedding for the `quantity_unit`.
+- **Fusion:** Text and image features are fused with cross-attention, and the result is then fused with the tabular features using a Gated Multimodal Unit (GMU).
+- **Output:** A final regression head predicts the log-transformed price.
 
-### 5.1 Validation Results
-- **SMAPE Score:** [To be filled after running evaluation and inverse-transforming predictions]
-- **Other Metrics:** [To be filled after running evaluation]
+### 3.2 Model 2: The Metadata Expert (LightGBM)
 
----
-
-## 6. Conclusion
-Our tri-modal, GMU-based architecture with its custom SMAPE loss and log-transformed target represents a highly-optimized, end-to-end solution tailored specifically to the constraints and evaluation criteria of this competition. This approach is designed to be robust, accurate, and state-of-the-art.
+- **Model Type:** `lightgbm.LGBMRegressor`.
+- **Inputs:** Trained exclusively on the structured tabular features: `pack_size`, `quantity_value`, and `quantity_unit` (which is label-encoded).
+- **Training:** The model is trained to predict the log-transformed price and uses early stopping based on validation performance to find the optimal number of boosting rounds.
 
 ---
 
-## Appendix
+## 4. Training & Prediction
 
-### A. Code Artefacts
-*The primary code for this solution can be found in the following files:*
-- `src/model.py`: Contains the implementation of the `ProductDataset` and the final `CrossModalAttentionModel` with the GMU.
-- `src/train.py`: Contains the training script, including the `SmoothSMAPELoss` implementation.
+### 4.1 Training
+
+1.  The Fusion Powerhouse (NN) is trained for 10 epochs using the `train.py` script. The best performing model is saved as `best.pth`.
+2.  The Metadata Expert (LGBM) is trained using the `train_lightgbm.py` script, which saves the final model as `lightgbm_model.pkl`.
+
+### 4.2 Prediction
+
+The `predict.py` script orchestrates the final prediction:
+1.  It loads both the trained neural network (`best.pth`) and the trained LightGBM model (`lightgbm_model.pkl`).
+2.  It generates two sets of log-price predictions for the test set, one from each model.
+3.  It averages these two sets of predictions.
+4.  It applies the inverse log transform (`expm1`) and a positive price safeguard to the final averaged predictions.
+5.  It saves the result to `test_out.csv` in the required submission format.
+
+---
+
+## 5. Appendix: Code Artefacts
+
+- **`src/model.py`**: Defines the architecture for the tri-modal neural network.
+- **`src/train.py`**: Trains the tri-modal neural network.
+- **`src/train_lightgbm.py`**: Trains the LightGBM tabular model.
+- **`src/predict.py`**: Loads both models and generates the final ensembled prediction.
+- **`src/evaluate.py`**: A utility to perform in-depth analysis on a trained model's performance on the validation set.

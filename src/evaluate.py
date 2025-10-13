@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import json
 from torch.utils.data import DataLoader
-from transformers import BertTokenizer, ViTImageProcessor
+from transformers import BertTokenizer, AutoImageProcessor
 from tqdm import tqdm
 import os
 from sklearn.model_selection import train_test_split
@@ -37,10 +37,11 @@ def calculate_metrics(y_true, y_pred):
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Absolute paths for Google Drive environment
 BASE_PATH = "/content/drive/MyDrive/Colab Notebooks/"
-TRAIN_CSV_PATH = os.path.join(BASE_PATH, "dataset/train_cleaned.csv")
+TRAIN_CSV_PATH = os.path.join(BASE_PATH, "dataset/train_features.csv")
 IMAGE_DIR = os.path.join(BASE_PATH, "dataset/images")
-MODEL_PATH = os.path.join(BASE_PATH, "cross_modal_model.pth")
+MODEL_PATH = os.path.join(BASE_PATH, "best.pth")
 VOCAB_PATH = os.path.join(BASE_PATH, "unit_vocab.json")
+STATS_PATH = os.path.join(BASE_PATH, "tabular_stats.json")
 BATCH_SIZE = 128
 
 def main():
@@ -53,37 +54,36 @@ def main():
     with open(VOCAB_PATH, 'r') as f:
         unit_vocab = json.load(f)
     unit_vocab_size = len(unit_vocab)
+    with open(STATS_PATH, 'r') as f:
+        tabular_stats = json.load(f)
 
     tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
 
     # --- 2. Load Model ---
     print(f"Loading trained model from {MODEL_PATH}...")
-    model = CrossModalAttentionModel(unit_vocab_size=unit_vocab_size).to(DEVICE)
+    model = CrossModalAttentionModel(
+        unit_vocab_size=unit_vocab_size, 
+        num_numerical_features=len(tabular_stats['mean'])
+    ).to(DEVICE)
     
-    # Clean the state_dict if the model was saved after torch.compile()
     state_dict = torch.load(MODEL_PATH, map_location=DEVICE)
-    new_state_dict = OrderedDict()
-    for k, v in state_dict.items():
-        name = k.replace("_orig_mod.", "") # remove `_orig_mod.`
-        new_state_dict[name] = v
-    model.load_state_dict(new_state_dict)
-    model.eval() # Set model to evaluation mode
+    model.load_state_dict(state_dict)
+    model.eval()
 
     # --- 3. Create Validation Dataset and DataLoader ---
     print("Loading and preparing validation data...")
     df = pd.read_csv(TRAIN_CSV_PATH)
-    # IMPORTANT: Use the same split as in training
     _, val_df = train_test_split(df, test_size=0.2, random_state=42)
 
     val_dataset = ProductDataset(
         dataframe=val_df, 
         tokenizer=tokenizer, 
-        image_processor=image_processor, 
         image_dir=IMAGE_DIR, 
-        unit_vocab=unit_vocab
+        unit_vocab=unit_vocab,
+        tabular_stats=tabular_stats,
+        split='val'
     )
-    val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True, persistent_workers=True, prefetch_factor=4)
+    val_dataloader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, num_workers=8, pin_memory=True)
 
     # --- 4. Generate Predictions ---
     print("Generating predictions on the validation set...")
@@ -95,12 +95,12 @@ def main():
             input_ids = batch['input_ids'].to(DEVICE, non_blocking=True)
             attention_mask = batch['attention_mask'].to(DEVICE, non_blocking=True)
             pixel_values = batch['pixel_values'].to(DEVICE, non_blocking=True)
-            value = batch['value'].to(DEVICE, non_blocking=True)
+            tabular_features = batch['tabular_features'].to(DEVICE, non_blocking=True)
             unit_idx = batch['unit_idx'].to(DEVICE, non_blocking=True)
             prices = batch['price'].to(DEVICE, non_blocking=True)
 
             with torch.autocast(device_type=str(DEVICE)):
-                log_preds = model(input_ids, attention_mask, pixel_values, value, unit_idx)
+                log_preds = model(input_ids, attention_mask, pixel_values, tabular_features, unit_idx)
             
             all_log_preds.append(log_preds.cpu())
             all_log_prices.append(prices.cpu())
@@ -110,7 +110,6 @@ def main():
     log_preds_cat = torch.cat(all_log_preds).numpy()
     log_prices_cat = torch.cat(all_log_prices).numpy()
 
-    # Inverse transform to get actual prices
     final_preds = np.expm1(log_preds_cat.flatten())
     final_prices = np.expm1(log_prices_cat.flatten())
 
@@ -128,7 +127,6 @@ def main():
     error_df['absolute_error'] = np.abs(error_df['predicted_price'] - error_df['actual_price'])
     error_df['percentage_error'] = (error_df['absolute_error'] / error_df['actual_price']) * 100
 
-    # Sort by absolute error
     worst_predictions = error_df.sort_values(by='absolute_error', ascending=False)
 
     print("\n--- Top 50 Worst Predictions (by Absolute Error) ---")

@@ -1,32 +1,77 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from transformers import BertModel, BertTokenizer, ViTModel, ViTImageProcessor
+from transformers import BertModel, BertTokenizer, ViTModel, ViTImageProcessor, RobertaModel, RobertaTokenizer, AutoModel
 import pandas as pd
 from PIL import Image
 import os
 from pathlib import Path
+import re
+from torchvision import transforms
 
-# Define the custom dataset
+# Define the new, advanced ProductDataset class
 class ProductDataset(torch.utils.data.Dataset):
-    def __init__(self, dataframe, tokenizer, image_processor, image_dir, unit_vocab=None):
-        self.df = dataframe
+    def __init__(self, dataframe, tokenizer, image_dir, split='train', unit_vocab=None, tabular_stats=None):
+        self.df = dataframe.copy()
         self.tokenizer = tokenizer
-        self.image_processor = image_processor
         self.image_dir = image_dir
+        self.split = split
 
-        # Handle 'value' column, fill NaNs and convert to float
-        self.df['value'] = pd.to_numeric(self.df['value'], errors='coerce').fillna(0)
+        # --- Text Cleaning ---
+        self.df['item_name'] = self.df['item_name'].astype(str).apply(self._clean_text)
 
-        # Build or use unit vocabulary
-        if unit_vocab:
-            self.unit_vocab = unit_vocab
+        # --- Tabular Feature Processing ---
+        self.numerical_cols = ['pack_size', 'quantity_value']
+        for col in self.numerical_cols:
+            self.df[col] = pd.to_numeric(self.df[col], errors='coerce').fillna(0)
+
+        if self.split == 'train':
+            self.tabular_stats = {
+                'mean': self.df[self.numerical_cols].mean(),
+                'std': self.df[self.numerical_cols].std()
+            }
         else:
-            unique_units = self.df['unit'].astype(str).unique().tolist()
+            if tabular_stats is None:
+                raise ValueError("Must provide tabular_stats for val/test splits")
+            self.tabular_stats = tabular_stats
+        
+        # Apply Z-score normalization
+        for col in self.numerical_cols:
+            mean = self.tabular_stats['mean'][col]
+            std = self.tabular_stats['std'][col]
+            self.df[col] = (self.df[col] - mean) / (std + 1e-8)
+
+        # --- Categorical Feature Processing ---
+        if self.split == 'train':
+            unique_units = self.df['quantity_unit'].astype(str).unique().tolist()
             self.unit_vocab = {unit: i+1 for i, unit in enumerate(unique_units)} 
             self.unit_vocab['__unknown__'] = 0
-        
+        else:
+            if unit_vocab is None:
+                raise ValueError("Must provide unit_vocab for val/test splits")
+            self.unit_vocab = unit_vocab
         self.unit_to_idx = self.unit_vocab
+
+        # --- Image Transforms ---
+        self.train_transforms = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomRotation(15),
+            transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+        self.val_transforms = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        ])
+
+    def _clean_text(self, text):
+        text = text.lower()
+        text = re.sub(r'<.*?>', '', text) # Remove HTML tags
+        text = re.sub(r'[^\w\s]', '', text) # Remove punctuation
+        return text
 
     def __len__(self):
         return len(self.df)
@@ -35,34 +80,34 @@ class ProductDataset(torch.utils.data.Dataset):
         row = self.df.iloc[idx]
         
         # 1. Text data
-        item_name = str(row.get('item_name', ''))
-        description = str(row.get('description', ''))
-        text = item_name + " " + description
-        inputs = self.tokenizer(text, return_tensors='pt', max_length=512, truncation=True, padding='max_length')
+        text = row['item_name']
+        inputs = self.tokenizer(text, return_tensors='pt', max_length=256, truncation=True, padding='max_length')
         
-        # 2. Image data from local storage
+        # 2. Image data
         try:
             image_filename = Path(row['image_link']).name
             image_path = os.path.join(self.image_dir, image_filename)
             image = Image.open(image_path).convert('RGB')
-            pixel_values = self.image_processor(image, return_tensors='pt').pixel_values
-        except Exception as e:
-            # print(f"Warning: Could not load image {image_path}. Using a zero tensor. Error: {e}")
-            pixel_values = torch.zeros((1, 3, 224, 224))
+            if self.split == 'train':
+                pixel_values = self.train_transforms(image)
+            else:
+                pixel_values = self.val_transforms(image)
+        except Exception:
+            pixel_values = torch.zeros((3, 224, 224))
 
         # 3. Tabular data
-        value = torch.tensor(row['value'], dtype=torch.float32)
-        unit = str(row.get('unit', '__unknown__'))
+        tabular_features = torch.tensor(row[self.numerical_cols].values.astype(np.float32), dtype=torch.float32)
+        unit = str(row.get('quantity_unit', '__unknown__'))
         unit_idx = torch.tensor(self.unit_to_idx.get(unit, 0), dtype=torch.long)
 
-        # 4. Price (target) - Apply log transformation
-        price = torch.tensor(np.log1p(row['price']), dtype=torch.float32) if 'price' in self.df.columns else torch.tensor(0, dtype=torch.float32)
+        # 4. Price (target)
+        price = torch.tensor(np.log1p(row['price']), dtype=torch.float32) if 'price' in row else torch.tensor(0, dtype=torch.float32)
 
         return {
             'input_ids': inputs['input_ids'].squeeze(0),
             'attention_mask': inputs['attention_mask'].squeeze(0),
-            'pixel_values': pixel_values.squeeze(0),
-            'value': value,
+            'pixel_values': pixel_values,
+            'tabular_features': tabular_features,
             'unit_idx': unit_idx,
             'price': price
         }
@@ -84,15 +129,18 @@ class GatedMultimodalUnit(nn.Module):
 
 # Define the Final Tri-Modal Model
 class CrossModalAttentionModel(nn.Module):
-    def __init__(self, unit_vocab_size, unit_embedding_dim=16, text_model_name='bert-base-uncased', image_model_name='google/vit-base-patch16-224-in21k'):
+    def __init__(self, unit_vocab_size, num_numerical_features, unit_embedding_dim=16, text_model_name='bert-base-uncased', image_model_name='facebook/dinov2-base'):
         super().__init__()
         
         # 1. Text encoder
-        self.text_encoder = BertModel.from_pretrained(text_model_name)
+        if 'roberta' in text_model_name:
+            self.text_encoder = RobertaModel.from_pretrained(text_model_name)
+        else:
+            self.text_encoder = BertModel.from_pretrained(text_model_name)
         text_hidden_size = self.text_encoder.config.hidden_size
 
         # 2. Image encoder
-        self.image_encoder = ViTModel.from_pretrained(image_model_name)
+        self.image_encoder = AutoModel.from_pretrained(image_model_name)
         image_hidden_size = self.image_encoder.config.hidden_size
 
         if text_hidden_size != image_hidden_size:
@@ -103,7 +151,7 @@ class CrossModalAttentionModel(nn.Module):
         # 3. Tabular tower
         self.unit_embedding = nn.Embedding(unit_vocab_size, unit_embedding_dim)
         self.tabular_mlp = nn.Sequential(
-            nn.Linear(1 + unit_embedding_dim, 64),
+            nn.Linear(num_numerical_features + unit_embedding_dim, 64),
             nn.ReLU(),
             nn.Linear(64, 128)
         )
@@ -125,7 +173,7 @@ class CrossModalAttentionModel(nn.Module):
             nn.Linear(64, 1)
         )
 
-    def forward(self, input_ids, attention_mask, pixel_values, value, unit_idx):
+    def forward(self, input_ids, attention_mask, pixel_values, tabular_features, unit_idx):
         # 1. Get text embeddings
         text_outputs = self.text_encoder(input_ids=input_ids, attention_mask=attention_mask)
         text_embeds = text_outputs.last_hidden_state
@@ -136,8 +184,7 @@ class CrossModalAttentionModel(nn.Module):
         
         # 3. Get tabular embeddings
         unit_embeds = self.unit_embedding(unit_idx)
-        value_unsqueezed = value.unsqueeze(1)
-        tabular_inputs = torch.cat((value_unsqueezed, unit_embeds), dim=1)
+        tabular_inputs = torch.cat((tabular_features, unit_embeds), dim=1)
         tabular_embeds = self.tabular_mlp(tabular_inputs)
 
         # 4. Apply cross-attention for text-image
@@ -154,47 +201,3 @@ class CrossModalAttentionModel(nn.Module):
         price = self.regression_head(final_features)
         
         return price
-
-if __name__ == '__main__':
-    # This block is for testing the model's forward pass with dummy data
-    print("Testing model architecture...")
-    
-    # Dummy data setup
-    batch_size = 4
-    dummy_df = pd.DataFrame({
-        'item_name': ['Product A', 'Product B', 'Product C', 'Product D'],
-        'description': ['Desc A', 'Desc B', 'Desc C', 'Desc D'],
-        'image_link': ['', '', '', ''], # No images downloaded in test
-        'value': [10, 20, 30, 40],
-        'unit': ['kg', 'lb', 'kg', 'oz'],
-        'price': [1.0, 2.0, 3.0, 4.0]
-    })
-
-    # Initializations
-    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-    image_processor = ViTImageProcessor.from_pretrained('google/vit-base-patch16-224-in21k')
-    
-    # Create dataset and get vocab size
-    dataset = ProductDataset(dataframe=dummy_df, tokenizer=tokenizer, image_processor=image_processor)
-    unit_vocab_size = len(dataset.unit_vocab)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
-    
-    # Initialize the model
-    model = CrossModalAttentionModel(unit_vocab_size=unit_vocab_size)
-    print("Model initialized successfully.")
-
-    # Process a single batch to test the forward pass
-    try:
-        batch = next(iter(dataloader))
-        outputs = model(
-            input_ids=batch['input_ids'],
-            attention_mask=batch['attention_mask'],
-            pixel_values=batch['pixel_values'],
-            value=batch['value'],
-            unit_idx=batch['unit_idx']
-        )
-        print(f"Model output shape: {outputs.shape}")
-        print(f"Sample predictions: {outputs.squeeze().tolist()}")
-        print("\nModel forward pass test successful!")
-    except Exception as e:
-        print(f"\nError during model forward pass test: {e}")
