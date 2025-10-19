@@ -1,0 +1,35 @@
+Train 1
+Epoch 1/10 | Train Loss: 0.6941 | Val Loss: 0.3207
+Epoch 2/10 | Train Loss: 0.3266 | Val Loss: 0.2894
+Epoch 3/10 | Train Loss: 0.3027 | Val Loss: 0.2556
+Epoch 4/10 | Train Loss: 0.2740 | Val Loss: 0.2375
+Epoch 5/10 | Train Loss: 0.2554 | Val Loss: 0.2489
+Epoch 6/10 | Train Loss: 0.2433 | Val Loss: 0.2165
+Epoch 7/10 | Train Loss: 0.2322 | Val Loss: 0.2358
+Epoch 8/10 | Train Loss: 0.2235 | Val Loss: 0.2085
+Epoch 9/10 | Train Loss: 0.2160 | Val Loss: 0.2150
+Epoch 10/10 | Train Loss: 0.2090 | Val Loss: 0.2124
+
+Train 2
+Epoch 1/10 | Train Loss: 0.8005 | Val Loss: 0.3471 | Val SMAPE: 82.8239% | Val MAE: $18.10
+Epoch 2/10 | Train Loss: 0.3323 | Val Loss: 0.2921 | Val SMAPE: 73.8361% | Val MAE: $16.73
+Epoch 3/10 | Train Loss: 0.3090 | Val Loss: 0.2646 | Val SMAPE: 77.8116% | Val MAE: $15.73
+Epoch 4/10 | Train Loss: 0.2776 | Val Loss: 0.2443 | Val SMAPE: 81.8031% | Val MAE: $14.78
+Epoch 5/10 | Train Loss: 0.2595 | Val Loss: 0.2333 | Val SMAPE: 82.5523% | Val MAE: $14.26
+Epoch 6/10 | Train Loss: 0.2460 | Val Loss: 0.2361 | Val SMAPE: 85.2392% | Val MAE: $14.12
+Epoch 7/10 | Train Loss: 0.2354 | Val Loss: 0.2263 | Val SMAPE: 85.6062% | Val MAE: $13.35
+Epoch 8/10 | Train Loss: 0.2288 | Val Loss: 0.2134 | Val SMAPE: 86.3027% | Val MAE: $12.87
+Epoch 9/10 | Train Loss: 0.2211 | Val Loss: 0.2229 | Val SMAPE: 89.4360% | Val MAE: $12.83
+Epoch 10/10 | Train Loss: 0.2144 | Val Loss: 0.2117 | Val SMAPE: 88.2065% | Val MAE: $12.52
+
+Train 3
+Epoch 1/10 | Train Loss: 0.8523 | Val Loss: 0.3365 | Val SMAPE: 80.7485% | Val MAE: $18.10
+Epoch 2/10 | Train Loss: 0.3388 | Val Loss: 0.2974 | Val SMAPE: 73.7401% | Val MAE: $17.09
+Epoch 3/10 | Train Loss: 0.3223 | Val Loss: 0.2928 | Val SMAPE: 73.0080% | Val MAE: $16.93
+Epoch 4/10 | Train Loss: 0.3042 | Val Loss: 0.2674 | Val SMAPE: 75.6788% | Val MAE: $15.99
+Epoch 5/10 | Train Loss: 0.2854 | Val Loss: 0.2516 | Val SMAPE: 82.2794% | Val MAE: $15.27
+Epoch 6/10 | Train Loss: 0.2663 | Val Loss: 0.2318 | Val SMAPE: 81.8262% | Val MAE: $14.41
+Epoch 7/10 | Train Loss: 0.2529 | Val Loss: 0.2219 | Val SMAPE: 82.9882% | Val MAE: $13.91
+Epoch 8/10 | Train Loss: 0.2439 | Val Loss: 0.2193 | Val SMAPE: 84.6132% | Val MAE: $13.57
+Epoch 9/10 | Train Loss: 0.2370 | Val Loss: 0.2145 | Val SMAPE: 83.6776% | Val MAE: $13.31
+Epoch 10/10 | Train Loss: 0.2307 | Val Loss: 0.2122 | Val SMAPE: 85.8055% | Val MAE: $13.17
